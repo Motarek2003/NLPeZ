@@ -1,8 +1,5 @@
 from abc import ABC, abstractmethod
 
-class Feature(ABC):
+class Manager(ABC):
     def __init__(self):
-        pass
-    @abstractmethod
-    def train(self):
         pass
