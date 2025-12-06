@@ -2,5 +2,8 @@ numpy
 pandas
 scikit-learn
 torch
+pyarabic
+tokenizers
+sentencepiece
 
 fastapi[standard]

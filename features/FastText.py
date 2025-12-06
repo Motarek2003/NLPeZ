@@ -51,7 +51,7 @@ class FastText(Feature):
     def train(self):
         # Train skipgram model (predicts context from target word)
         model = fasttext.train_unsupervised(
-            'training_data.txt',    # Input file
+            'train.txt',    # Input file
             model='skipgram',
             dim=50,                 # Embedding dimension
             epoch=10,               # Number of training iterations
