@@ -27,6 +27,7 @@ MAX_SEQ_LENGTH = 256
 CHAR_EMB_DIM = 128
 LSTM_HIDDEN_DIM = 256
 FASTTEXT_DIM = 100
+POS_EMB_DIM = 32
 LEARNING_RATE = 1e-4
 NUM_EPOCHS = 16
 PATIENCE = 6
@@ -37,7 +38,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # ------------------------------------------------------------------
 # TRAINING FUNCTION
 # ------------------------------------------------------------------
-def train_diacritization_model(train_file, dev_file, fasttext_model_path):
+def train_diacritization_model(train_file, dev_file, fasttext_model_path, fasttext_corpus_path="data/undiacritized/traincu_data.txt"):
 
     processor = ArabicDiacritizationProcessor()
 
@@ -45,7 +46,7 @@ def train_diacritization_model(train_file, dev_file, fasttext_model_path):
     # Load / Train FastText
     # -----------------------------
     fasttext_feature = FastTextEmbeddings(
-        corpus_path="data/undiacritized/traincu_data.txt",
+        corpus_path=fasttext_corpus_path,
         output_path=fasttext_model_path,
         dim=FASTTEXT_DIM
     )
@@ -78,6 +79,8 @@ def train_diacritization_model(train_file, dev_file, fasttext_model_path):
     )
     dev_dataset.char_to_id = train_dataset.char_to_id
     dev_dataset.id_to_char = train_dataset.id_to_char
+    dev_dataset.pos_to_id = train_dataset.pos_to_id
+    dev_dataset.id_to_pos = train_dataset.id_to_pos
 
     # -----------------------------
     # DataLoaders
@@ -106,9 +109,11 @@ def train_diacritization_model(train_file, dev_file, fasttext_model_path):
     model = Arabic_BiLSTM_CRF(
         char_vocab_size=len(train_dataset.char_to_id),
         num_tags=len(processor.all_labels),
+        pos_vocab_size=len(train_dataset.pos_to_id),
         char_embedding_dim=CHAR_EMB_DIM,
         lstm_hidden_dim=LSTM_HIDDEN_DIM,
-        fasttext_embedding_dim=FASTTEXT_DIM
+        fasttext_embedding_dim=FASTTEXT_DIM,
+        pos_embedding_dim=POS_EMB_DIM
     ).to(device)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
@@ -138,6 +143,7 @@ def train_diacritization_model(train_file, dev_file, fasttext_model_path):
 
             input_ids = batch["input_ids"].to(device, non_blocking=True)
             labels = batch["labels"].to(device, non_blocking=True)
+            pos_ids = batch["pos_ids"].to(device, non_blocking=True)
             lengths = batch["lengths"]
 
             # 🔥 ACCURACY-OPTIMAL FASTTEXT
@@ -153,7 +159,8 @@ def train_diacritization_model(train_file, dev_file, fasttext_model_path):
                     input_ids,
                     labels,
                     lengths,
-                    fasttext_vectors
+                    fasttext_vectors,
+                    pos_ids
                 )
 
             scaler.scale(loss).backward()
@@ -195,6 +202,10 @@ def train_diacritization_model(train_file, dev_file, fasttext_model_path):
             patience_counter = 0
             print(">>> New best model — saving checkpoint", flush=True)
 
+            output_dir = os.path.join(PROJECT_ROOT, "training", "outputs")
+            os.makedirs(output_dir, exist_ok=True)
+            save_path = os.path.join(output_dir, "best_diacritization_model.pth")
+
             torch.save(
                 {
                     "model_state_dict": model.state_dict(),
@@ -205,7 +216,7 @@ def train_diacritization_model(train_file, dev_file, fasttext_model_path):
                     "lstm_hidden_dim": LSTM_HIDDEN_DIM,
                     "fasttext_dim": FASTTEXT_DIM,
                 },
-                "/kaggle/working/best_diacritization_model.pth",
+                save_path,
             )
         else:
             patience_counter += 1
@@ -229,6 +240,7 @@ def evaluate_model(model, dataloader, aligner, device):
         for batch in dataloader:
             input_ids = batch["input_ids"].to(device, non_blocking=True)
             labels = batch["labels"].to(device, non_blocking=True)
+            pos_ids = batch["pos_ids"].to(device, non_blocking=True)
             lengths = batch["lengths"]
 
             fasttext_vectors = aligner.align_features(
@@ -239,7 +251,8 @@ def evaluate_model(model, dataloader, aligner, device):
             predictions = model.forward(
                 input_ids,
                 lengths,
-                fasttext_vectors
+                fasttext_vectors,
+                pos_ids
             )
 
             for i, length in enumerate(lengths.tolist()):
@@ -256,7 +269,7 @@ if __name__ == "__main__":
 
     TRAIN_FILE = "data/cleaned/trainc_data.txt"
     DEV_FILE = "data/cleaned/valc_data.txt"
-    FASTTEXT_MODEL_PATH = "/kaggle/working/embeddings/fasttext_word_vectors.bin"
+    FASTTEXT_MODEL_PATH = "data/embeddings/fasttext_word_vectors.bin"
 
     train_diacritization_model(
         TRAIN_FILE,

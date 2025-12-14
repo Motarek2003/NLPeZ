@@ -10,22 +10,28 @@ class Arabic_BiLSTM_CRF(Model, nn.Module):
     def __init__(self,
                  char_vocab_size: int,
                  num_tags: int,
+                 pos_vocab_size: int,
                  char_embedding_dim: int = 128,
                  lstm_hidden_dim: int = 256,
                  fasttext_embedding_dim: int = 100, # FastText dimension
+                 pos_embedding_dim: int = 32, # POS dimension
                  dropout: float = 0.3):
 
         nn.Module.__init__(self)
         Model.__init__(self)
 
         # Calculate the total input dimension for the LSTM after feature concatenation
-        self.lstm_input_dim = char_embedding_dim + fasttext_embedding_dim #char dim + word dim
+        self.lstm_input_dim = char_embedding_dim + fasttext_embedding_dim + pos_embedding_dim #char dim + word dim + pos dim
 
         # 1. Character Embedding Layer (Trainable)
         self.char_embedding = nn.Embedding(char_vocab_size, char_embedding_dim, padding_idx=0) # Creates a lookup table for all character IDs.
+        
+        # 2. POS Embedding Layer (Trainable)
+        self.pos_embedding = nn.Embedding(pos_vocab_size, pos_embedding_dim, padding_idx=0)
+
         self.dropout = nn.Dropout(dropout) # Used for regularization, applied to the character embeddings before the LSTM
 
-        # 2. BiLSTM Layer (The Encoder)
+        # 3. BiLSTM Layer (The Encoder)
         num_layers = 1 # Example
         lstm_dropout = dropout if num_layers > 1 else 0
         self.lstm = nn.LSTM(self.lstm_input_dim,
@@ -39,22 +45,29 @@ class Arabic_BiLSTM_CRF(Model, nn.Module):
         self.hidden2tag = nn.Linear(lstm_hidden_dim, num_tags)
 
         # 4. CRF Layer (Batched and Efficient)
-        self.crf = CRF(num_tags, batch_first=True)
+        # Adapted for TorchCRF (s14t284) which does not support batch_first=True in __init__
+        self.crf = CRF(num_tags)
 
-    def _get_lstm_features(self, input_ids: torch.Tensor, lengths: torch.Tensor, fasttext_vectors: torch.Tensor)-> torch.Tensor:
+    def _get_lstm_features(self, input_ids: torch.Tensor, lengths: torch.Tensor, fasttext_vectors: torch.Tensor, pos_ids: torch.Tensor)-> torch.Tensor:
         """
         Generates emission scores (BiLSTM output) for the batch.
         """
         # 1. Character Embedding (C_emb)
         char_embedded = self.char_embedding(input_ids) # (B, L, C_emb_dim)
-        char_embedded = self.dropout(char_embedded)
+        
+        # 2. POS Embedding
+        pos_embedded = self.pos_embedding(pos_ids) # (B, L, Pos_emb_dim)
 
-        # 2. Feature Concatenation (C_emb + W)
-        lstm_input = torch.cat([char_embedded, fasttext_vectors], dim=-1) # (B, L, LSTM_input_dim)
+        # Apply dropout
+        char_embedded = self.dropout(char_embedded)
+        pos_embedded = self.dropout(pos_embedded)
+
+        # 3. Feature Concatenation (C_emb + W + POS)
+        lstm_input = torch.cat([char_embedded, fasttext_vectors, pos_embedded], dim=-1) # (B, L, LSTM_input_dim)
         max_len = lstm_input.size(1)
         lengths = torch.clamp(lengths, max=max_len)
 
-        # 3. Packing (Required for performance with variable lengths)
+        # 4. Packing (Required for performance with variable lengths)
         # .cpu().tolist() is necessary here
         packed_input = nn.utils.rnn.pack_padded_sequence(
             lstm_input,
@@ -76,27 +89,49 @@ class Arabic_BiLSTM_CRF(Model, nn.Module):
         return emissions
 
     # --- Loss Calculation (using batched CRF) ---
-    def neg_log_likelihood(self, input_ids: torch.Tensor, labels: torch.Tensor, lengths: torch.Tensor, fasttext_vectors: torch.Tensor) -> torch.Tensor:
+    def neg_log_likelihood(self, input_ids: torch.Tensor, labels: torch.Tensor, lengths: torch.Tensor, fasttext_vectors: torch.Tensor, pos_ids: torch.Tensor) -> torch.Tensor:
         """
         Compute negative log likelihood (training loss) using the CRF layer.
         """
-        emissions = self._get_lstm_features(input_ids, lengths, fasttext_vectors) # Computes the batched emission scores
+        emissions = self._get_lstm_features(input_ids, lengths, fasttext_vectors, pos_ids) # Computes the batched emission scores
         # Create a mask to inform the CRF where the actual sequence ends
         mask = torch.zeros_like(input_ids, dtype=torch.bool).to(input_ids.device) # Initializes a boolean mask tensor.
         for i, length in enumerate(lengths):
             mask[i, :length] = True
 
         # CRF computes NLL loss (forward_score - gold_score)
+        # TorchCRF (s14t284) seems to expect (batch, seq_len, num_tags) based on error analysis
+        # So we do NOT transpose.
+        
         # Reduction='mean' applies mean NLL across the batch
-        loss = -self.crf(emissions, tags=labels, mask=mask, reduction='mean')
-        return loss
+        # TorchCRF returns sum log-likelihood by default (check implementation if unsure)
+        # We negate it to get NLL.
+        ll = self.crf(emissions, labels=labels, mask=mask)
+        
+        # If TorchCRF returns a vector (per-sequence LL), sum it up
+        if ll.dim() > 0:
+            ll = ll.sum()
+            
+        loss = -ll
+        
+        # Normalize by batch size to mimic reduction='mean'
+        return loss / input_ids.size(0)
 
     # --- Inference (using batched CRF) ---
-    def forward(self, input_ids: torch.Tensor, lengths: torch.Tensor, fasttext_vectors: torch.Tensor) -> List[List[int]]:
+    def forward(self, input_ids: torch.Tensor, lengths: torch.Tensor, fasttext_vectors: torch.Tensor, pos_ids: torch.Tensor) -> List[List[int]]:
         """
         Inference: return predicted tag sequences via Viterbi decoding.
         """
-        emissions = self._get_lstm_features(input_ids, lengths, fasttext_vectors)
+        emissions = self._get_lstm_features(input_ids, lengths, fasttext_vectors, pos_ids)
+        
+        # Create mask
+        mask = torch.zeros_like(input_ids, dtype=torch.bool).to(input_ids.device)
+        for i, length in enumerate(lengths):
+            mask[i, :length] = True
+            
+        # Do NOT transpose for TorchCRF
+        
+        return self.crf.viterbi_decode(emissions, mask=mask)
 
         # Create mask
         mask = torch.zeros_like(input_ids, dtype=torch.bool).to(input_ids.device)

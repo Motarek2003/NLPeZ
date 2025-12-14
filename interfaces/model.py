@@ -1,6 +1,3 @@
-from abc import ABC, abstractmethod
-
-class Model(ABC):
+class Model:
     def __init__(self):
         pass
-    

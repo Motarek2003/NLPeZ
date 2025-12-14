@@ -188,15 +188,16 @@ class ArabicDiacritizationProcessor:
 # print(f"Characters: {char_seq}")
 # print(f"Diacritics: {diac_seq}")
 # print(f"Labels (IDs): {[processor.label_to_id[d] for d in diac_seq]}")
-from pathlib import Path
+if __name__ == "__main__":
+    from pathlib import Path
 
-BASE_DIR = Path(__file__).resolve().parent.parent  # NLPeZ/
+    BASE_DIR = Path(__file__).resolve().parent.parent  # NLPeZ/
 
-input_path = BASE_DIR / "data" / "cleaned" / "trainc_data.txt"
-output_path = BASE_DIR / "data" / "undiacritized" / "traincu_data.txt"
+    input_path = BASE_DIR / "data" / "cleaned" / "trainc_data.txt"
+    output_path = BASE_DIR / "data" / "undiacritized" / "traincu_data.txt"
 
-processor = ArabicDiacritizationProcessor()
-processor.generate_undiacritized_corpus(
-    str(input_path),
-    str(output_path)
-)
+    processor = ArabicDiacritizationProcessor()
+    processor.generate_undiacritized_corpus(
+        str(input_path),
+        str(output_path)
+    )

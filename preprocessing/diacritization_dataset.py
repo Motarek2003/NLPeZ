@@ -3,6 +3,7 @@ import torch
 from torch.utils.data import Dataset
 from typing import List, Dict, Tuple
 import os
+from tqdm import tqdm
 
 # Special tokens
 PAD_TOKEN = "<PAD>"
@@ -40,6 +41,16 @@ class DiacritizationDataset(Dataset):
 
         self.label_to_id = self.processor.label_to_id
         self.id_to_label = self.processor.id_to_label
+
+        # Initialize POS Tagger
+        self.pos_pipeline = None
+        self._init_pos_tagger()
+
+        # Cache POS tags
+        self.cached_pos_tags = self._cache_pos_tags()
+
+        # Build POS Vocab
+        self.pos_to_id, self.id_to_pos = self._build_pos_vocab(self.cached_pos_tags)
 
         # 🔴 CACHE FASTTEXT VECTORS ONCE
         self.cached_fasttext = []
@@ -84,11 +95,126 @@ class DiacritizationDataset(Dataset):
         print(f"Character Vocabulary Size: {len(char_to_id)}")
         return char_to_id, id_to_char
 
+    def _init_pos_tagger(self):
+        try:
+            from transformers import pipeline
+            print("Initializing POS tagger (CAMeLBERT)...")
+            self.pos_pipeline = pipeline(
+                "token-classification",
+                model="CAMeL-Lab/bert-base-arabic-camelbert-msa-pos",
+                aggregation_strategy="simple", # Groups subwords
+                device=0 if torch.cuda.is_available() else -1
+            )
+        except Exception as e:
+            print(f"Warning: Could not initialize POS tagger: {e}. Using dummy tags.")
+            self.pos_pipeline = None
+
+    def _cache_pos_tags(self) -> List[List[str]]:
+        cached_tags = []
+        print("Caching POS tags...")
+        
+        if self.pos_pipeline:
+            # Process in batches for speed
+            batch_size = 32
+            for i in tqdm(range(0, len(self.raw_data), batch_size), desc="POS Tagging"):
+                batch_sentences = self.raw_data[i : i + batch_size]
+                # Strip diacritics for BERT
+                batch_clean = [self.processor.strip_diacritics(s) for s in batch_sentences]
+                
+                try:
+                    results = self.pos_pipeline(batch_clean)
+                    
+                    for j, res in enumerate(results):
+                        # res is a list of entities: [{'entity_group': 'NOUN', 'word': '...', ...}]
+                        # We need to map these to our words.
+                        # Since we used aggregation_strategy="simple", 'word' should be the full word (mostly).
+                        
+                        # Simple alignment: Just take the tags in order.
+                        # If count mismatches, pad or truncate.
+                        
+                        original_words = self.processor.tokenize_to_words(batch_sentences[j])
+                        tags = [entity['entity_group'] for entity in res]
+                        
+                        # Force alignment
+                        if len(tags) < len(original_words):
+                            tags.extend(["NOUN"] * (len(original_words) - len(tags)))
+                        elif len(tags) > len(original_words):
+                            tags = tags[:len(original_words)]
+                            
+                        cached_tags.append(tags)
+                        
+                except Exception as e:
+                    # Fallback for batch failure
+                    for sent in batch_sentences:
+                        words = self.processor.tokenize_to_words(sent)
+                        cached_tags.append(["NOUN"] * len(words))
+        else:
+            # Dummy fallback
+            for sentence in self.raw_data:
+                words = self.processor.tokenize_to_words(sentence)
+                cached_tags.append(["NOUN"] * len(words))
+                
+        return cached_tags
+
+    def _build_pos_vocab(self, all_tags: List[List[str]]) -> Tuple[Dict[str, int], Dict[int, str]]:
+        unique_tags = set()
+        for tags in all_tags:
+            unique_tags.update(tags)
+            
+        # Ensure special tokens
+        pos_to_id = {"<PAD>": 0, "OTHER": 1}
+        current_id = 2
+        
+        for tag in sorted(unique_tags):
+            if tag not in pos_to_id:
+                pos_to_id[tag] = current_id
+                current_id += 1
+                
+        id_to_pos = {v: k for k, v in pos_to_id.items()}
+        print(f"POS Vocabulary Size: {len(pos_to_id)}")
+        return pos_to_id, id_to_pos
+
+    def _get_pos_tags(self, idx: int) -> List[str]:
+        return self.cached_pos_tags[idx]
+
+    def _align_pos_tags(self, char_seq: List[str], words: List[str], pos_tags: List[str]) -> List[str]:
+        aligned_pos = []
+        word_idx = 0
+        char_in_word_idx = 0
+        
+        for char in char_seq:
+            if char.strip() == "": # Space or invisible
+                 aligned_pos.append("OTHER")
+                 continue
+            
+            if word_idx < len(words):
+                # Safety check for index
+                tag = pos_tags[word_idx] if word_idx < len(pos_tags) else "OTHER"
+                aligned_pos.append(tag)
+                
+                char_in_word_idx += 1
+                
+                current_word = words[word_idx]
+                # Simple length check - this assumes perfect tokenization match which is rare
+                # But for character alignment, we just need to know when to switch word.
+                # Since we stripped diacritics for both, lengths should match roughly.
+                
+                # Better logic:
+                # If we consumed all chars of current word, move to next.
+                if char_in_word_idx >= len(current_word):
+                    word_idx += 1
+                    char_in_word_idx = 0
+            else:
+                aligned_pos.append("OTHER")
+        return aligned_pos
+
+
     def _vectorize_and_pad(
         self,
         char_sequence: List[str],
         diacritic_sequence: List[str],
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        pos_sequence: List[str],
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
 
         char_ids = [
             self.char_to_id.get(c, self.char_to_id[UNK_TOKEN])
@@ -102,8 +228,14 @@ class DiacritizationDataset(Dataset):
             for d in diacritic_sequence
         ]
 
+        pos_ids = [
+            self.pos_to_id.get(p, self.pos_to_id["OTHER"])
+            for p in pos_sequence
+        ]
+
         char_ids = char_ids[: self.max_seq_length]
         label_ids = label_ids[: self.max_seq_length]
+        pos_ids = pos_ids[: self.max_seq_length]
 
         padding = self.max_seq_length - len(char_ids)
 
@@ -111,10 +243,12 @@ class DiacritizationDataset(Dataset):
         label_ids.extend(
             [self.label_to_id[self.processor.NO_TASHKEEL]] * padding
         )
+        pos_ids.extend([self.pos_to_id["<PAD>"]] * padding)
 
         return (
             torch.tensor(char_ids, dtype=torch.long),
             torch.tensor(label_ids, dtype=torch.long),
+            torch.tensor(pos_ids, dtype=torch.long),
         )
 
     def __len__(self):
@@ -133,14 +267,20 @@ class DiacritizationDataset(Dataset):
             for c in char_seq_diac
         ]
 
-        input_ids, labels = self._vectorize_and_pad(
-            char_seq, diac_seq
+        # POS Tagging
+        words = self.processor.tokenize_to_words(sentence)
+        word_pos_tags = self._get_pos_tags(idx)
+        pos_seq = self._align_pos_tags(char_seq, words, word_pos_tags)
+
+        input_ids, labels, pos_ids = self._vectorize_and_pad(
+            char_seq, diac_seq, pos_seq
         )
         actual_len = min(len(char_seq), self.max_seq_length)
 
         item = {
             "input_ids": input_ids,
             "labels": labels,
+            "pos_ids": pos_ids,
             "lengths": torch.tensor(actual_len, dtype=torch.long),
         }
 
