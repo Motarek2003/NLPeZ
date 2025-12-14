@@ -67,7 +67,10 @@ class Arabic_BiLSTM_CRF(Model, nn.Module):
         packed_output, _ = self.lstm(packed_input) # Runs the packed sequence through the LSTM.
 
         # 5. Unpacking
-        lstm_out, _ = nn.utils.rnn.pad_packed_sequence(packed_output, batch_first=True)
+        lstm_out, _ = nn.utils.rnn.pad_packed_sequence(packed_output,
+            batch_first=True,
+            total_length=input_ids.size(1)
+        )
         # Converts the LSTM output back into a padded tensor format, ensuring the output aligns with the original batch shape $(B, L, H_{dim})$
 
         # 6. Emission Score Projection
