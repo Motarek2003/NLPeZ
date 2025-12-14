@@ -56,6 +56,6 @@ if __name__ == '__main__':
     os.makedirs('data', exist_ok=True)
 
     # Process the files
-    cleaner.clean_file('train.txt', 'cleaned_train_data.txt')
-    cleaner.clean_file('val.txt', 'cleaned_val_data.txt')
+    cleaner.clean_file('data/uncleaned/train.txt', 'data/cleaned/trainc_data.txt')
+    cleaner.clean_file('data/uncleaned/val.txt', 'data/cleaned/valc_data.txt')
     #cleaner.clean_file('data/test.txt', 'dataset/test/full_data.txt')

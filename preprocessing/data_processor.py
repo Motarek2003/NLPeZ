@@ -183,6 +183,6 @@ class ArabicDiacritizationProcessor:
 # print(f"Labels (IDs): {[processor.label_to_id[d] for d in diac_seq]}")
 
 processor = ArabicDiacritizationProcessor()
-input = "data/cleaned_diacritized/cleaned_train_data.txt"
-output = "data/cleaned_undiacritized/cleaned_train_data.txt"
+input = r'data/cleaned/trainc_data.txt'
+output = "data/undiacritized/traincu_data.txt"
 processor.generate_undiacritized_corpus(input, output)
