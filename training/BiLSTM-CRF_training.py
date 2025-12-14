@@ -173,7 +173,7 @@ def train_diacritization_model(train_file: str, dev_file: str, fasttext_model_pa
             'fasttext_dim': FASTTEXT_DIM,
             'char_emb_dim': CHAR_EMB_DIM,
             'lstm_hidden_dim': LSTM_HIDDEN_DIM,
-            'fasttext_vectors': "data/embeddings/fasttext_word_vectors.bin"
+            'fasttext_vectors': fasttext_model_path
         }, 'best_diacritization_model.pth')
         else:
             # No improvement: Increment counter
@@ -229,7 +229,7 @@ if __name__ == '__main__':
     # NOTE: These paths must be correctly set up
     TRAIN_FILE = 'data/cleaned/trainc_data.txt'
     DEV_FILE = 'data/cleaned/valc_data.txt'
-    FASTTEXT_MODEL_PATH = 'data/embeddings/fasttext_word_vectors.bin'
+    FASTTEXT_MODEL_PATH = '/kaggle/working/embeddings/fasttext_word_vectors.bin'
 
     # 1. Ensure FastText model is trained first!
     # fasttext_trainer = FastTextEmbeddings(corpus_path='data/fasttext_corpus.txt', model_output_path=FASTTEXT_MODEL_PATH)
