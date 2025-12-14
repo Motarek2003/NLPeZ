@@ -6,4 +6,4 @@
 
 # Large files to exclude
 # Check the size of this file first!
-#data/embeddings/fasttext_word_vectors.bin
+data/embeddings/fasttext_word_vectors.bin
