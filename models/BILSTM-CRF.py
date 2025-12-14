@@ -43,7 +43,7 @@ class SeqDataset(Dataset):
 
 
 dataset = SeqDataset(sentences_idx, tags_idx)
-dataloader = DataLoader(dataset, batch_size=1, shuffle=True)
+dataloader = DataLoader(dataset, batch_size=1, shuffle=True) # why batch size = 1?
 
 class BiLSTM_CRF(Model, nn.Module):
     def __init__(self, vocab_size, tag_to_idx, embedding_dim, hidden_dim):
@@ -51,15 +51,36 @@ class BiLSTM_CRF(Model, nn.Module):
         Model.__init__(self)
 
         self.embedding = nn.Embedding(vocab_size, embedding_dim)
-        self.lstm = nn.LSTM(embedding_dim, hidden_dim // 2, num_layers=1, bidirectional=True)
-        self.hidden2tag = nn.Linear(hidden_dim, len(tag_to_idx))
-        self.transitions = nn.Parameter(torch.randn(len(tag_to_idx), len(tag_to_idx)))
+        self.lstm = nn.LSTM(embedding_dim, hidden_dim // 2, num_layers=1, bidirectional=True) #why num layers =1? Because a single BiLSTM layer is usually sufficient and more stable for CRF-based sequence labeling
+        self.hidden2tag = nn.Linear(hidden_dim, len(tag_to_idx)) #It is a projection layer that converts: Contextual features → tag scores, i.e. gives prob for each tag at a certain word
+        self.transitions = nn.Parameter(torch.randn(len(tag_to_idx), len(tag_to_idx))) #score of transitioning FROM tag j TO tag i, used by crf to calculate sequence score, viterbi decoder, log-likelihood
         self.tag_to_idx = tag_to_idx
 
+        """
+        Token IDs
+        ↓
+        Embedding Layer
+        ↓
+        BiLSTM (1 layer, bidirectional)
+        ↓
+        Linear Layer (emissions)
+        ↓
+        CRF (transitions + emissions)
+
+        """
+    # hidden dimension is supposed to be the number of neurons per layer, but if we have bidirectional, then if hidden_dim = 256, we will have 128 in forward_lstm and 128 in backward_lstm
+    # embedding_dim != hidden_dim, The LSTM transforms embeddings into a richer space. embedding_dim = 100, hidden_dim = 256
+    # LSTM input_size == embedding_dim
+    # Emission score = how likely a tag fits a word at a specific position
+    # CRF calculates Total Score = Σ emission_score(word_i, tag_i) + Σ transition_score(tag_i → tag_{i+1})
+    # Without CRF: Each word is tagged independently, Invalid sequences may occur: I-PER at sentence start I-PER after O
+
+
     def _forward_alg(self, feats):
-        # Forward algorithm to calculate the partition function
-        init_alphas = torch.full((1, len(self.tag_to_idx)), -10000.)
-        init_alphas[0][self.tag_to_idx["<START>"]] = 0.
+        # CRF forward algorithm (log-space) to compute the partition function𝑍(𝑥) Z(x)
+        # feats are the emission score outputs from the hidden2tag
+        init_alphas = torch.full((1, len(self.tag_to_idx)), -10000.) # α₀ vector, Size: (1, num_tags), -10000. is like initilaizing with -inf
+        init_alphas[0][self.tag_to_idx["<START>"]] = 0. #At time step 0: Probability of being in <START> = 1 → log(1) = 0, All other tags = impossible
         forward_var = init_alphas
         for feat in feats:
             alphas_t = []
@@ -67,13 +88,16 @@ class BiLSTM_CRF(Model, nn.Module):
                 emit_score = feat[next_tag].view(1, -1).expand(1, len(self.tag_to_idx))
                 trans_score = self.transitions[next_tag].view(1, -1)
                 next_tag_var = forward_var + trans_score + emit_score
-                alphas_t.append(torch.logsumexp(next_tag_var, dim=1))
-            forward_var = torch.cat(alphas_t).view(1, -1)
-        terminal_var = forward_var + self.transitions[self.tag_to_idx["<STOP>"]]
+                alphas_t.append(torch.logsumexp(next_tag_var, dim=1)) # summation of exponentials to avoid overflow or underflow, then take log
+            forward_var = torch.cat(alphas_t).view(1, -1) # forward_var now contains αt+1​(k)∀k, This completes one time step.
+        terminal_var = forward_var + self.transitions[self.tag_to_idx["<STOP>"]] # Add transition scores from last tags → <STOP>, Enforces proper sequence termination
         alpha = torch.logsumexp(terminal_var, dim=1)
         return alpha
+    # used later in: loss = forward_score - gold_score
 
-    def _get_lstm_features(self, sentence):
+    def _get_lstm_features(self, sentence): # converts a sentence into emission scores (one score per tag, per word).
+        # Token IDs → Embeddings → BiLSTM → Linear → Emission Scores
+        # sentence: A tensor of word indices, (sequence_length,)
         embedded = self.embedding(sentence).view(len(sentence), 1, -1)
         lstm_out, _ = self.lstm(embedded)
         lstm_out = lstm_out.view(len(sentence), -1)
