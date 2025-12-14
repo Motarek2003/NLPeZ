@@ -1,3 +1,10 @@
+from pathlib import Path
+import os
+
+print("SCRIPT LOCATION:", Path(__file__).resolve())
+print("CWD:", Path.cwd())
+print("FILES IN data/cleaned:", os.listdir(Path(__file__).resolve().parent.parent / "data" / "cleaned"))
+
 import re
 from typing import List, Tuple, Dict, Any
 
@@ -181,8 +188,15 @@ class ArabicDiacritizationProcessor:
 # print(f"Characters: {char_seq}")
 # print(f"Diacritics: {diac_seq}")
 # print(f"Labels (IDs): {[processor.label_to_id[d] for d in diac_seq]}")
+from pathlib import Path
+
+BASE_DIR = Path(__file__).resolve().parent.parent  # NLPeZ/
+
+input_path = BASE_DIR / "data" / "cleaned" / "trainc_data.txt"
+output_path = BASE_DIR / "data" / "undiacritized" / "traincu_data.txt"
 
 processor = ArabicDiacritizationProcessor()
-input = r'data/cleaned/trainc_data.txt'
-output = "data/undiacritized/traincu_data.txt"
-processor.generate_undiacritized_corpus(input, output)
+processor.generate_undiacritized_corpus(
+    str(input_path),
+    str(output_path)
+)
