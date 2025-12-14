@@ -65,6 +65,7 @@ class FastTextEmbeddings(Feature):
             maxn=6                  # Character n-grams for morphology (Standard)
         )
 
+        os.makedirs(os.path.dirname(self.output_path), exist_ok=True)
         self.model.save_model(self.output_path)
         print(f"FastText model trained and saved as '{self.output_path}' with dim={self.dim}")
         return self.model
