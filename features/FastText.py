@@ -26,6 +26,18 @@ class FastTextEmbeddings(Feature):
         self.dim = dim
         self.model = None
 
+    def get_or_train(self):
+        """
+        Loads a FastText model if it exists, otherwise trains and saves it.
+        """
+        if os.path.exists(self.output_path):
+            print(f"Loading existing FastText model from {self.output_path}")
+            return self.load_model()
+        else:
+            print(f"No FastText model found. Training new model...")
+            return self.train()
+
+
     def train(self) -> fasttext.FastText:
         """
         Trains the unsupervised FastText skipgram model on the Arabic corpus.

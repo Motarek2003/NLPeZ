@@ -47,9 +47,13 @@ def train_diacritization_model(train_file: str, dev_file: str, fasttext_model_pa
     # Initialize Processor (for vocab and data splitting)
     processor = ArabicDiacritizationProcessor()
 
-    # Load FastText Model
-    fasttext_feature = FastTextEmbeddings(corpus_path="data/cleaned_undiacritized/cleaned_train_data.txt", output_path=fasttext_model_path, dim=FASTTEXT_DIM)
-    fasttext_model = fasttext_feature.load_model()
+    fasttext_feature = FastTextEmbeddings(
+        corpus_path="data/undiacritized/traincu_data.txt",
+        output_path=fasttext_model_path,
+        dim=FASTTEXT_DIM
+        )
+    fasttext_model = fasttext_feature.get_or_train()
+
 
     # Initialize Datasets and Loaders
     # NOTE: The character vocabulary is built from the training set ONLY
@@ -221,8 +225,8 @@ def evaluate_model(model: nn.Module, dataloader: DataLoader, aligner: FastTextFe
 # --- Execution Example (Requires all modules to be fully implemented) ---
 if __name__ == '__main__':
     # NOTE: These paths must be correctly set up
-    TRAIN_FILE = 'data/cleaned_diacritized/cleaned_train_data.txt'
-    DEV_FILE = 'data/cleaned_diacritized/cleaned_val_data.txt'
+    TRAIN_FILE = 'data/cleaned/trainc_data.txt'
+    DEV_FILE = 'data/cleaned/valc_data.txt'
     FASTTEXT_MODEL_PATH = 'data/embeddings/fasttext_word_vectors.bin'
 
     # 1. Ensure FastText model is trained first!
