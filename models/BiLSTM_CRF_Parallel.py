@@ -15,7 +15,8 @@ class Arabic_BiLSTM_CRF(Model, nn.Module):
                  lstm_hidden_dim: int = 256,
                  fasttext_embedding_dim: int = 100, # FastText dimension
                  pos_embedding_dim: int = 32, # POS dimension
-                 dropout: float = 0.3):
+                 num_layers: int = 2,
+                 dropout: float = 0.5):
 
         nn.Module.__init__(self)
         Model.__init__(self)
@@ -32,7 +33,6 @@ class Arabic_BiLSTM_CRF(Model, nn.Module):
         self.dropout = nn.Dropout(dropout) # Used for regularization, applied to the character embeddings before the LSTM
 
         # 3. BiLSTM Layer (The Encoder)
-        num_layers = 1 # Example
         lstm_dropout = dropout if num_layers > 1 else 0
         self.lstm = nn.LSTM(self.lstm_input_dim,
                             lstm_hidden_dim // 2,
@@ -40,6 +40,9 @@ class Arabic_BiLSTM_CRF(Model, nn.Module):
                             bidirectional=True,
                             batch_first=True,
                             dropout=lstm_dropout) # Dropout applies if num_layers > 1
+
+        # 3.5 Layer Normalization (Stability)
+        self.layer_norm = nn.LayerNorm(lstm_hidden_dim)
 
         # 3. Emission Score Projection Layer
         self.hidden2tag = nn.Linear(lstm_hidden_dim, num_tags)
@@ -82,6 +85,9 @@ class Arabic_BiLSTM_CRF(Model, nn.Module):
         # 5. Unpacking
         lstm_out, _ = nn.utils.rnn.pad_packed_sequence(packed_output, batch_first=True)
         # Converts the LSTM output back into a padded tensor format, ensuring the output aligns with the original batch shape $(B, L, H_{dim})$
+
+        # Apply LayerNorm
+        lstm_out = self.layer_norm(lstm_out)
 
         # 6. Emission Score Projection
         emissions = self.hidden2tag(lstm_out) # (B, L, Num_tags)

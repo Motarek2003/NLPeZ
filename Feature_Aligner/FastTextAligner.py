@@ -1,7 +1,7 @@
 import torch
 import numpy as np
 from typing import List, Dict
-import fasttext
+# import fasttext # Removed dependency
 
 from preprocessing.diacritization_dataset import UNK_TOKEN, PAD_TOKEN
 
@@ -15,7 +15,7 @@ class FastTextFeatureAligner:
 
     def __init__(
         self,
-        raw_fasttext_model: "fasttext.FastText",
+        raw_fasttext_model, # Type hint removed to support both libs
         id_to_char_vocab: Dict[int, str],
         space_char: str = " ",
     ):
@@ -27,8 +27,13 @@ class FastTextFeatureAligner:
         self.space_char = space_char
 
         # Infer FastText dimension safely
-        dummy_vec = self.fasttext_model.get_word_vector("__dummy__")
-        self.fasttext_dim = dummy_vec.shape[0]
+        if hasattr(self.fasttext_model, 'wv'):
+             # Gensim
+             self.fasttext_dim = self.fasttext_model.wv.vector_size
+        else:
+             # Fallback (original fasttext or mock)
+             dummy_vec = self.fasttext_model.get_word_vector("__dummy__")
+             self.fasttext_dim = dummy_vec.shape[0]
 
         # PAD id (assumed)
         self.pad_id = next(
@@ -97,7 +102,12 @@ class FastTextFeatureAligner:
 
                 # Get FastText vector
                 try:
-                    word_vec = self.fasttext_model.get_word_vector(word)
+                    if hasattr(self.fasttext_model, 'wv'):
+                        # Gensim
+                        word_vec = self.fasttext_model.wv[word]
+                    else:
+                        # Fallback
+                        word_vec = self.fasttext_model.get_word_vector(word)
                 except Exception:
                     word_vec = self.unk_word_vector
 

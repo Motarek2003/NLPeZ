@@ -1,0 +1,32 @@
+2025-12-15 00:07:13,628 [INFO] Training started on cpu
+2025-12-15 00:07:26,684 [INFO] Training started on cpu
+2025-12-15 00:08:44,492 [INFO] Training started on cpu
+2025-12-15 00:09:13,998 [INFO] Training started on cpu
+2025-12-15 00:09:20,395 [INFO] 
+--- Training Loop Started ---
+2025-12-15 00:09:23,319 [INFO] Train | Epoch 1 | Batch 1/1 | Loss 98.9197
+2025-12-15 00:09:26,965 [INFO] Epoch 1 | Time 6.6s | Train Loss 98.9197 | Dev DER 0.4583 | Dev Accuracy 0.5417
+2025-12-15 00:09:27,001 [INFO] >>> New best model — saving checkpoint
+2025-12-15 00:09:27,039 [INFO] Training started on cpu
+2025-12-15 00:10:00,074 [INFO] Training started on cpu
+2025-12-15 00:10:06,499 [INFO] 
+--- Training Loop Started ---
+2025-12-15 00:10:09,321 [INFO] Train | Epoch 1 | Batch 1/1 | Loss 98.9197
+2025-12-15 00:10:12,928 [INFO] Epoch 1 | Time 6.4s | Train Loss 98.9197 | Dev DER 0.4583 | Dev Accuracy 0.5417
+2025-12-15 00:10:12,968 [INFO] >>> New best model — saving checkpoint
+2025-12-15 00:10:12,988 [INFO] Training started on cpu
+2025-12-15 00:10:13,020 [INFO] 
+--- Training Loop Started ---
+2025-12-15 00:10:15,952 [INFO] Train | Epoch 1 | Batch 1/1 | Loss 98.9197
+2025-12-15 00:11:11,807 [INFO] Training started on cpu
+2025-12-15 00:11:18,370 [INFO] 
+--- Training Loop Started ---
+2025-12-15 00:11:21,217 [INFO] Train | Epoch 1 | Batch 1/1 | Loss 98.9197
+2025-12-15 00:11:25,007 [INFO] Epoch 1 | Time 6.6s | Train Loss 98.9197 | Dev DER 0.4583 | Dev Accuracy 0.5417
+2025-12-15 00:11:25,057 [INFO] >>> New best model — saving checkpoint
+2025-12-15 00:11:25,084 [INFO] Training started on cpu
+2025-12-15 00:11:25,109 [INFO] 
+--- Training Loop Started ---
+2025-12-15 00:11:28,078 [INFO] Train | Epoch 1 | Batch 1/1 | Loss 98.9197
+2025-12-15 00:11:31,775 [INFO] Epoch 1 | Time 6.7s | Train Loss 98.9197 | Dev DER 0.4583 | Dev Accuracy 0.5417
+2025-12-15 00:11:31,813 [INFO] >>> New best model — saving checkpoint

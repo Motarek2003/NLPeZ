@@ -1,4 +1,6 @@
-import fasttext
+import gensim
+from gensim.models import FastText
+from gensim.models.word2vec import LineSentence
 #import os
 from typing import Optional
 #from interfaces.feature import Feature # Assuming Feature is a base class for engineering features
@@ -10,15 +12,15 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from interfaces.feature import Feature
 
 # Set a standard dimension that is typical for a language model (e.g., 100 or 200)
-EMBEDDING_DIM = 100
+EMBEDDING_DIM = 300
 class FastTextEmbeddings(Feature):
     """
     A dedicated class for training and loading FastText word embeddings
-    for the Arabic Diacritization task.
+    for the Arabic Diacritization task using Gensim.
     """
     def __init__(self,
                  corpus_path: str,
-                 output_path: str = 'data/embeddings/fasttext_word_vectors.bin',
+                 output_path: str = 'data/embeddings/fasttext_word_vectors.model',
                  dim: int = EMBEDDING_DIM): # Increased dimension for Arabic
 
         super().__init__()
@@ -39,7 +41,7 @@ class FastTextEmbeddings(Feature):
             return self.train()
 
 
-    def train(self) -> fasttext.FastText:
+    def train(self) -> FastText:
         """
         Trains the unsupervised FastText skipgram model on the Arabic corpus.
             """
@@ -55,23 +57,26 @@ class FastTextEmbeddings(Feature):
         if not os.path.exists(self.corpus_path):
             raise FileNotFoundError(f"Corpus file not found at: {self.corpus_path}")
 
-        self.model = fasttext.train_unsupervised(
-            self.corpus_path,
-            model='skipgram',
-            dim=self.dim,
-            epoch=15,
-            minCount=5,
-            minn=3,
-            maxn=6
+        # Gensim FastText training
+        self.model = FastText(
+            vector_size=self.dim,
+            window=5,
+            min_count=5,
+            sentences=LineSentence(self.corpus_path),
+            epochs=10,
+            sg=1, # skipgram
+            min_n=3,
+            max_n=6
         )
 
-        self.model.save_model(self.output_path)
+        self.model.save(self.output_path)
         print(f"FastText model trained and saved at {self.output_path}")
         return self.model
+
     def load_model(self):
         """Loads a pre-trained model."""
         if os.path.exists(self.output_path):
-            self.model = fasttext.load_model(self.output_path)
+            self.model = FastText.load(self.output_path)
             return self.model
         else:
             raise FileNotFoundError(f"Model file not found at: {self.output_path}. Please train first.")
@@ -80,8 +85,8 @@ class FastTextEmbeddings(Feature):
         """Retrieves the vector for a given word using the trained model."""
         if self.model is None:
             self.load_model()
-        # FastText automatically handles OOV words via character n-grams
-        return self.model.get_word_vector(word)
+        # Gensim uses .wv for word vectors
+        return self.model.wv[word]
 
 # --- Usage Flow ---
 # 1. Ensure your cleaned, undiacritized training data is saved to a file, e.g., 'arabic_train_words.txt'

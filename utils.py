@@ -13,10 +13,16 @@ def collate_fn(batch):
         [item["lengths"] for item in batch],
         dtype=torch.long
     )
+    
+    # Handle FastText if present
+    fasttext = None
+    if "fasttext" in batch[0]:
+        fasttext = torch.stack([item["fasttext"] for item in batch])
 
     return {
         "input_ids": input_ids,
         "labels": labels,
         "pos_ids": pos_ids,
-        "lengths": lengths
+        "lengths": lengths,
+        "fasttext": fasttext
     }

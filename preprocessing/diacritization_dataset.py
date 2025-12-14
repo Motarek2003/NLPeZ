@@ -285,7 +285,33 @@ class DiacritizationDataset(Dataset):
         }
 
         # 🔴 RETURN CACHED FASTTEXT
-        if self.fasttext_aligner is not None:
+        if len(self.cached_fasttext) > idx:
             item["fasttext"] = self.cached_fasttext[idx]
 
         return item
+
+    def save(self, path: str):
+        """
+        Saves the dataset to disk, removing non-serializable/heavy objects.
+        """
+        # Remove heavy/non-serializable objects
+        aligner_backup = self.fasttext_aligner
+        pipeline_backup = self.pos_pipeline
+        
+        self.fasttext_aligner = None
+        self.pos_pipeline = None
+        
+        print(f"Saving dataset to {path}...")
+        torch.save(self, path)
+        print("Dataset saved.")
+        
+        # Restore (optional, if we continue using this instance)
+        self.fasttext_aligner = aligner_backup
+        self.pos_pipeline = pipeline_backup
+
+    @staticmethod
+    def load(path: str) -> "DiacritizationDataset":
+        print(f"Loading dataset from {path}...")
+        dataset = torch.load(path, weights_only=False)
+        print("Dataset loaded.")
+        return dataset
