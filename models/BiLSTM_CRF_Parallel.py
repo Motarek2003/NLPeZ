@@ -55,8 +55,11 @@ class Arabic_BiLSTM_CRF(Model, nn.Module):
         # 3. Packing (Required for performance with variable lengths)
         # .cpu().tolist() is necessary here
         packed_input = nn.utils.rnn.pack_padded_sequence(
-            lstm_input, lengths.cpu().tolist(), batch_first=True
-        ) # It converts the padded batch into a single, contiguous tensor, ignoring the padding tokens.
+            lstm_input,
+            lengths.cpu().tolist(),
+            batch_first=True,
+            enforce_sorted=False
+        )# It converts the padded batch into a single, contiguous tensor, ignoring the padding tokens.
 
         # 4. BiLSTM Pass
         packed_output, _ = self.lstm(packed_input) # Runs the packed sequence through the LSTM.
