@@ -28,7 +28,7 @@ CHAR_EMB_DIM = 128
 LSTM_HIDDEN_DIM = 256
 FASTTEXT_DIM = 100
 LEARNING_RATE = 1e-4
-NUM_EPOCHS = 16
+NUM_EPOCHS = 32
 PATIENCE = 6
 BATCH_PRINT_FREQ = 100
 
@@ -194,7 +194,8 @@ def train_diacritization_model(train_file, dev_file, fasttext_model_path):
             best_dev_der = dev_der
             patience_counter = 0
             print(">>> New best model — saving checkpoint", flush=True)
-
+            CHECKPOINT_PATH = "/kaggle/working/best_diacritization_model.pth"
+            os.makedirs(os.path.dirname(CHECKPOINT_PATH), exist_ok=True)
             torch.save(
                 {
                     "model_state_dict": model.state_dict(),
@@ -205,8 +206,10 @@ def train_diacritization_model(train_file, dev_file, fasttext_model_path):
                     "lstm_hidden_dim": LSTM_HIDDEN_DIM,
                     "fasttext_dim": FASTTEXT_DIM,
                 },
-                "/kaggle/working/best_diacritization_model.pth",
+                CHECKPOINT_PATH,
             )
+            print("Checkpoint exists after save:", os.path.exists(CHECKPOINT_PATH), flush=True)
+
         else:
             patience_counter += 1
             print(
