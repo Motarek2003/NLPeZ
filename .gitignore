@@ -1,2 +1,13 @@
 .venv/
 .venv_fasttext/
+# Python compiled files
+**/__pycache__/
+*.pyc
+
+# Large files to exclude
+# Check the size of this file first!
+data/embeddings/fasttext_word_vectors.bin
+
+# If the text files are also large:
+data/uncleaned/*.txt
+data/cleaned_diacritized/*.txt
