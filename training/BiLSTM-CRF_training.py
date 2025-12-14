@@ -51,31 +51,32 @@ def train_diacritization_model(train_file, dev_file, fasttext_model_path):
     fasttext_model = fasttext_feature.get_or_train()
 
     # -----------------------------
-    # Create aligner ONCE
-    # -----------------------------
-    aligner = FastTextFeatureAligner(fasttext_model, None)
-
-    # -----------------------------
-    # Create datasets (with caching)
+    # Build TRAIN dataset FIRST (to get vocab)
     # -----------------------------
     train_dataset = DiacritizationDataset(
         train_file,
         processor,
-        MAX_SEQ_LENGTH,
-        fasttext_aligner=aligner
+        MAX_SEQ_LENGTH
     )
 
+    # -----------------------------
+    # Create aligner (needs vocab)
+    # -----------------------------
+    aligner = FastTextFeatureAligner(
+        fasttext_model,
+        train_dataset.id_to_char
+    )
+
+    # -----------------------------
+    # Build DEV dataset (share vocab)
+    # -----------------------------
     dev_dataset = DiacritizationDataset(
         dev_file,
         processor,
-        MAX_SEQ_LENGTH,
-        fasttext_aligner=aligner
+        MAX_SEQ_LENGTH
     )
-
-    # Share vocab
     dev_dataset.char_to_id = train_dataset.char_to_id
     dev_dataset.id_to_char = train_dataset.id_to_char
-    aligner.id_to_char = train_dataset.id_to_char
 
     # -----------------------------
     # DataLoaders
@@ -133,10 +134,16 @@ def train_diacritization_model(train_file, dev_file, fasttext_model_path):
         )
 
         for batch_idx, batch in enumerate(train_bar):
+
             input_ids = batch["input_ids"].to(device, non_blocking=True)
             labels = batch["labels"].to(device, non_blocking=True)
             lengths = batch["lengths"]
-            fasttext_vectors = batch["fasttext"].to(device, non_blocking=True)
+
+            # 🔥 ACCURACY-OPTIMAL FASTTEXT
+            fasttext_vectors = aligner.align_features(
+                input_ids,
+                lengths
+            ).to(device)
 
             optimizer.zero_grad()
 
@@ -168,7 +175,7 @@ def train_diacritization_model(train_file, dev_file, fasttext_model_path):
         # -----------------------------
         # VALIDATION
         # -----------------------------
-        dev_der = evaluate_model(model, dev_loader, device)
+        dev_der = evaluate_model(model, dev_loader, aligner, device)
 
         epoch_time = time.time() - start_time
         print(
@@ -213,7 +220,7 @@ def train_diacritization_model(train_file, dev_file, fasttext_model_path):
 # ------------------------------------------------------------------
 # EVALUATION
 # ------------------------------------------------------------------
-def evaluate_model(model, dataloader, device):
+def evaluate_model(model, dataloader, aligner, device):
     model.eval()
     all_preds, all_labels = [], []
 
@@ -222,7 +229,11 @@ def evaluate_model(model, dataloader, device):
             input_ids = batch["input_ids"].to(device, non_blocking=True)
             labels = batch["labels"].to(device, non_blocking=True)
             lengths = batch["lengths"]
-            fasttext_vectors = batch["fasttext"].to(device, non_blocking=True)
+
+            fasttext_vectors = aligner.align_features(
+                input_ids,
+                lengths
+            ).to(device)
 
             predictions = model.forward(
                 input_ids,
@@ -234,7 +245,6 @@ def evaluate_model(model, dataloader, device):
                 all_preds.extend(predictions[i])
                 all_labels.extend(labels[i, :length].tolist())
 
-    # Placeholder DER
     return sum(p != t for p, t in zip(all_preds, all_labels)) / len(all_labels)
 
 
