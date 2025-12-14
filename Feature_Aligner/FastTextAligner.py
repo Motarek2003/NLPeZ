@@ -71,14 +71,6 @@ class FastTextFeatureAligner:
         char_ids_batch: torch.Tensor,
         lengths: torch.Tensor,
     ) -> torch.Tensor:
-        """
-        Args:
-            char_ids_batch: (B, L) LongTensor
-            lengths: (B,) LongTensor
-
-        Returns:
-            aligned_features: (B, L, fasttext_dim)
-        """
 
         cpu_ids = char_ids_batch.detach().cpu()
         lengths = lengths.detach().cpu()
@@ -90,30 +82,31 @@ class FastTextFeatureAligner:
         )
 
         for b in range(batch_size):
-            seq_len = lengths[b].item()
+            seq_len = int(lengths[b].item())
             char_ids = cpu_ids[b, :seq_len].tolist()
 
-            # 1️⃣ Reconstruct words
+            # Reconstruct words
             words = self._reconstruct_words(char_ids)
 
             char_pos = 0
+            char_ids_len = len(char_ids)
+
             for word in words:
                 if not word:
                     continue
 
-                # 2️⃣ Get FastText word vector
+                # Get FastText vector
                 try:
                     word_vec = self.fasttext_model.get_word_vector(word)
                 except Exception:
                     word_vec = self.unk_word_vector
 
-                # 3️⃣ Broadcast to characters
-                assigned = 0
                 target_len = len(word)
+                assigned = 0
 
-                while char_pos < seq_len and assigned < target_len:
+                while char_pos < char_ids_len and assigned < target_len:
                     cid = char_ids[char_pos]
-                    ch = self.id_to_char_vocab.get(cid, UNK_TOKEN)
+                    ch = self.id_to_char_vocab.get(cid, "")
 
                     # Skip spaces explicitly
                     if ch == self.space_char:
@@ -124,9 +117,10 @@ class FastTextFeatureAligner:
                     assigned += 1
                     char_pos += 1
 
-                # Move past any spaces after the word
-                while char_pos < seq_len:
-                    ch = self.id_to_char_vocab.get(char_ids[char_pos], "")
+                # Skip any remaining spaces safely
+                while char_pos < char_ids_len:
+                    cid = char_ids[char_pos]
+                    ch = self.id_to_char_vocab.get(cid, "")
                     if ch == self.space_char:
                         char_pos += 1
                     else:
