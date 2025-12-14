@@ -41,35 +41,32 @@ class FastTextEmbeddings(Feature):
     def train(self) -> fasttext.FastText:
         """
         Trains the unsupervised FastText skipgram model on the Arabic corpus.
-        """
-        # --- CONDITIONAL CHECK ADDED HERE ---
+            """
+            # ✅ ensure output directory exists (CRITICAL)
+        os.makedirs(os.path.dirname(self.output_path), exist_ok=True)
+
         if os.path.exists(self.output_path):
             print(f"FastText model already exists at '{self.output_path}'. Skipping training.")
-            # Load the existing model instead of training
             return self.load_model()
-        # ------------------------------------
 
         print(f"Starting FastText training on {self.corpus_path}...")
 
-        # Check if corpus file exists
         if not os.path.exists(self.corpus_path):
-            raise FileNotFoundError(f"Corpus file not found at: {self.corpus_path}. Ensure it is created.")
+            raise FileNotFoundError(f"Corpus file not found at: {self.corpus_path}")
 
         self.model = fasttext.train_unsupervised(
-            self.corpus_path,       # Actual Arabic corpus file
+            self.corpus_path,
             model='skipgram',
-            dim=self.dim,           # Customizable embedding dimension (e.g., 100)
-            epoch=15,               # Slightly increased epochs
-            minCount=5,             # Increased min count to filter noise
-            minn=3,                 # Character n-grams for morphology (Standard)
-            maxn=6                  # Character n-grams for morphology (Standard)
+            dim=self.dim,
+            epoch=15,
+            minCount=5,
+            minn=3,
+            maxn=6
         )
 
-        os.makedirs(os.path.dirname(self.output_path), exist_ok=True)
         self.model.save_model(self.output_path)
-        print(f"FastText model trained and saved as '{self.output_path}' with dim={self.dim}")
+        print(f"FastText model trained and saved at {self.output_path}")
         return self.model
-
     def load_model(self):
         """Loads a pre-trained model."""
         if os.path.exists(self.output_path):
