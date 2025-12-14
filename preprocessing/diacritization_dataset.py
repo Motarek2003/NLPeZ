@@ -136,11 +136,12 @@ class DiacritizationDataset(Dataset):
         input_ids, labels = self._vectorize_and_pad(
             char_seq, diac_seq
         )
+        actual_len = min(len(char_seq), self.max_seq_length)
 
         item = {
             "input_ids": input_ids,
             "labels": labels,
-            "lengths": torch.tensor(len(char_seq), dtype=torch.long),
+            "lengths": torch.tensor(actual_len, dtype=torch.long),
         }
 
         # 🔴 RETURN CACHED FASTTEXT

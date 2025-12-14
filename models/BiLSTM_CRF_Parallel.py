@@ -51,6 +51,8 @@ class Arabic_BiLSTM_CRF(Model, nn.Module):
 
         # 2. Feature Concatenation (C_emb + W)
         lstm_input = torch.cat([char_embedded, fasttext_vectors], dim=-1) # (B, L, LSTM_input_dim)
+        max_len = lstm_input.size(1)
+        lengths = torch.clamp(lengths, max=max_len)
 
         # 3. Packing (Required for performance with variable lengths)
         # .cpu().tolist() is necessary here

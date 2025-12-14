@@ -8,6 +8,7 @@ if PROJECT_ROOT not in sys.path:
 
 import torch
 import torch.nn as nn
+from torch import amp
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
@@ -147,7 +148,7 @@ def train_diacritization_model(train_file, dev_file, fasttext_model_path):
 
             optimizer.zero_grad()
 
-            with torch.cuda.amp.autocast(enabled=device.type == "cuda"):
+            with amp.autocast(device_type="cuda", enabled=device.type == "cuda"):
                 loss = model.neg_log_likelihood(
                     input_ids,
                     labels,
