@@ -3,6 +3,7 @@ pandas
 scikit-learn
 torch
 pytorch-crf
+torchcrf
 tqdm
 
 fastapi[standard]
