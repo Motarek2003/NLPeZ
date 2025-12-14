@@ -2,6 +2,7 @@ import fasttext
 #import os
 from typing import Optional
 #from interfaces.feature import Feature # Assuming Feature is a base class for engineering features
+from pathlib import Path
 
 import sys
 import os
@@ -21,8 +22,8 @@ class FastTextEmbeddings(Feature):
                  dim: int = EMBEDDING_DIM): # Increased dimension for Arabic
 
         super().__init__()
-        self.corpus_path = corpus_path
-        self.output_path = output_path
+        self.corpus_path = str(Path(corpus_path).resolve())
+        self.output_path = str(Path(output_path).resolve())
         self.dim = dim
         self.model = None
 
