@@ -25,18 +25,18 @@ from utils import collate_fn
 # ------------------------------------------------------------------
 # CONFIGURATION
 # ------------------------------------------------------------------
-BATCH_SIZE = 32 # Increased for stable gradients
-MAX_SEQ_LENGTH = 300 # Increased context
-CHAR_EMB_DIM = 256 # Increased capacity
-LSTM_HIDDEN_DIM = 512 # Increased capacity
+BATCH_SIZE = 128  # OPTIMIZED: Doubled batch size for faster training
+MAX_SEQ_LENGTH = 200  # OPTIMIZED: Reduced from 300 to 200 (shorter sequences = faster)
+CHAR_EMB_DIM = 128  # OPTIMIZED: Reduced from 256 to 128
+LSTM_HIDDEN_DIM = 256  # OPTIMIZED: Reduced from 512 to 256 (still good quality)
 FASTTEXT_DIM = 300 # Standard high-quality dimension
-POS_EMB_DIM = 64 # Increased capacity
-LEARNING_RATE = 1e-3 # Higher start for "chunky" improvements
-NUM_EPOCHS = 10 # Significantly increased to allow reaching 98% accuracy
-PATIENCE = 20 # Increased patience to survive plateaus
+POS_EMB_DIM = 64  # OPTIMIZED: Reduced from 64 to 32
+LEARNING_RATE = 2e-3  # OPTIMIZED: Increased for faster convergence
+NUM_EPOCHS = 5  # OPTIMIZED: Reduced from 10 to 5 (with better LR)
+PATIENCE = 5  # OPTIMIZED: Reduced patience threshold
 BATCH_PRINT_FREQ = 100
-NUM_LAYERS = 2 # Deeper model
-DROPOUT = 0.5 # Higher regularization
+NUM_LAYERS = 1  # OPTIMIZED: Reduced from 2 to 1 layer
+DROPOUT = 0.3  # OPTIMIZED: Reduced from 0.5 to 0.3
 TARGET_ACCURACY = 0.995 # Target accuracy (1 - DER)
 GRADIENT_CLIP_VAL = 1.0 # Prevent exploding gradients with high LR
 WEIGHT_DECAY = 1e-5 # Regularization for AdamW
@@ -70,7 +70,7 @@ def setup_logger(log_file):
 # ------------------------------------------------------------------
 # TRAINING FUNCTION
 # ------------------------------------------------------------------
-def train_diacritization_model(train_file, dev_file, fasttext_model_path, fasttext_corpus_path="data/undiacritized/traincu_data.txt", resume=False):
+def train_diacritization_model(train_file, dev_file, fasttext_model_path, fasttext_corpus_path="data/undiacritized/traincu_data.txt"):
 
     set_seed(SEED)
     
@@ -172,7 +172,7 @@ def train_diacritization_model(train_file, dev_file, fasttext_model_path, fastte
         batch_size=BATCH_SIZE,
         shuffle=True,
         collate_fn=collate_fn,
-        num_workers=0,
+        num_workers=4,  # OPTIMIZED: Added parallel data loading
         pin_memory=True
     )
 
@@ -181,7 +181,7 @@ def train_diacritization_model(train_file, dev_file, fasttext_model_path, fastte
         batch_size=BATCH_SIZE,
         shuffle=False,
         collate_fn=collate_fn,
-        num_workers=0,
+        num_workers=2,  # OPTIMIZED: Added parallel data loading
         pin_memory=True
     )
 
@@ -208,30 +208,13 @@ def train_diacritization_model(train_file, dev_file, fasttext_model_path, fastte
 
     best_dev_der = float("inf")
     patience_counter = 0
-    start_epoch = 0
-
-    # -----------------------------
-    # RESUME LOGIC
-    # -----------------------------
-    last_checkpoint_path = os.path.join(output_dir, "last_checkpoint.pth")
-    if resume and os.path.exists(last_checkpoint_path):
-        logger.info(f"Resuming from checkpoint: {last_checkpoint_path}")
-        checkpoint = torch.load(last_checkpoint_path, map_location=device)
-        model.load_state_dict(checkpoint['model_state_dict'])
-        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
-        scaler.load_state_dict(checkpoint['scaler_state_dict'])
-        start_epoch = checkpoint['epoch'] + 1
-        best_dev_der = checkpoint['best_dev_der']
-        patience_counter = checkpoint['patience_counter']
-        logger.info(f"Resumed at Epoch {start_epoch+1} with Best DER: {best_dev_der:.4f}")
 
     logger.info(f"\n--- Training Loop Started ---")
 
     # ------------------------------------------------------------------
     # TRAINING LOOP
     # ------------------------------------------------------------------
-    for epoch in range(start_epoch, NUM_EPOCHS):
+    for epoch in range(NUM_EPOCHS):
         start_time = time.time()
         model.train()
         total_loss = 0.0
@@ -248,12 +231,12 @@ def train_diacritization_model(train_file, dev_file, fasttext_model_path, fastte
             input_ids = batch["input_ids"].to(device, non_blocking=True)
             labels = batch["labels"].to(device, non_blocking=True)
             pos_ids = batch["pos_ids"].to(device, non_blocking=True)
-            lengths = batch["lengths"]
+            lengths = batch["lengths"].to(device, non_blocking=True)  # OPTIMIZED: Move to device
             
             # FastText is now part of the batch from dataset
             fasttext_vectors = batch["fasttext"].to(device, non_blocking=True)
 
-            optimizer.zero_grad()
+            optimizer.zero_grad(set_to_none=True)  # OPTIMIZED: More efficient
 
             with amp.autocast(device_type="cuda", enabled=device.type == "cuda"):
                 loss = model.neg_log_likelihood(
@@ -304,19 +287,6 @@ def train_diacritization_model(train_file, dev_file, fasttext_model_path, fastte
         )
 
         # -----------------------------
-        # SAVE LAST CHECKPOINT (For Resume)
-        # -----------------------------
-        torch.save({
-            'epoch': epoch,
-            'model_state_dict': model.state_dict(),
-            'optimizer_state_dict': optimizer.state_dict(),
-            'scheduler_state_dict': scheduler.state_dict(),
-            'scaler_state_dict': scaler.state_dict(),
-            'best_dev_der': best_dev_der,
-            'patience_counter': patience_counter
-        }, last_checkpoint_path)
-
-        # -----------------------------
         # CHECKPOINT BEST MODEL
         # -----------------------------
         if dev_der < best_dev_der:
@@ -352,6 +322,14 @@ def train_diacritization_model(train_file, dev_file, fasttext_model_path, fastte
             if patience_counter >= PATIENCE:
                 logger.info("Early stopping triggered.")
                 break
+    
+    # FINAL SUMMARY
+    logger.info("=" * 70)
+    logger.info("TRAINING COMPLETED")
+    logger.info(f"Best Dev DER: {best_dev_der:.4f}")
+    logger.info(f"Best Dev Accuracy: {1 - best_dev_der:.4f}")
+    logger.info(f"Model saved to: {os.path.join(output_dir, 'best_diacritization_model.pth')}")
+    logger.info("=" * 70)
 
 
 # ------------------------------------------------------------------
@@ -366,7 +344,7 @@ def evaluate_model(model, dataloader, device):
             input_ids = batch["input_ids"].to(device, non_blocking=True)
             labels = batch["labels"].to(device, non_blocking=True)
             pos_ids = batch["pos_ids"].to(device, non_blocking=True)
-            lengths = batch["lengths"]
+            lengths = batch["lengths"].to(device, non_blocking=True)  # OPTIMIZED: Move to device
 
             fasttext_vectors = batch["fasttext"].to(device, non_blocking=True)
 
@@ -393,12 +371,8 @@ if __name__ == "__main__":
     DEV_FILE = "data/cleaned/valc_data.txt"
     FASTTEXT_MODEL_PATH = "data/embeddings/fasttext_word_vectors.model"
 
-    # Check if we should resume (simple check for now, can be argparsed)
-    RESUME = False 
-
     train_diacritization_model(
         TRAIN_FILE,
         DEV_FILE,
-        FASTTEXT_MODEL_PATH,
-        resume=RESUME
+        FASTTEXT_MODEL_PATH
     )

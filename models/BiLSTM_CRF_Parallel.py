@@ -1,7 +1,7 @@
 from interfaces.model import Model
 import torch
 import torch.nn as nn
-from torchcrf import CRF
+from TorchCRF import CRF
 from typing import List
 
 # Assuming the necessary imports and global constants (like START_TAG, STOP_TAG) are available.
@@ -100,10 +100,10 @@ class Arabic_BiLSTM_CRF(Model, nn.Module):
         Compute negative log likelihood (training loss) using the CRF layer.
         """
         emissions = self._get_lstm_features(input_ids, lengths, fasttext_vectors, pos_ids) # Computes the batched emission scores
-        # Create a mask to inform the CRF where the actual sequence ends
-        mask = torch.zeros_like(input_ids, dtype=torch.bool).to(input_ids.device) # Initializes a boolean mask tensor.
-        for i, length in enumerate(lengths):
-            mask[i, :length] = True
+        
+        # OPTIMIZED: Create mask more efficiently
+        batch_size, seq_len = input_ids.shape
+        mask = torch.arange(seq_len, device=input_ids.device).expand(batch_size, seq_len) < lengths.unsqueeze(1)
 
         # CRF computes NLL loss (forward_score - gold_score)
         # TorchCRF (s14t284) seems to expect (batch, seq_len, num_tags) based on error analysis
@@ -121,7 +121,7 @@ class Arabic_BiLSTM_CRF(Model, nn.Module):
         loss = -ll
         
         # Normalize by batch size to mimic reduction='mean'
-        return loss / input_ids.size(0)
+        return loss / batch_size
 
     # --- Inference (using batched CRF) ---
     def forward(self, input_ids: torch.Tensor, lengths: torch.Tensor, fasttext_vectors: torch.Tensor, pos_ids: torch.Tensor) -> List[List[int]]:
@@ -130,23 +130,12 @@ class Arabic_BiLSTM_CRF(Model, nn.Module):
         """
         emissions = self._get_lstm_features(input_ids, lengths, fasttext_vectors, pos_ids)
         
-        # Create mask
-        mask = torch.zeros_like(input_ids, dtype=torch.bool).to(input_ids.device)
-        for i, length in enumerate(lengths):
-            mask[i, :length] = True
-            
+        # OPTIMIZED: Create mask more efficiently
+        batch_size, seq_len = input_ids.shape
+        mask = torch.arange(seq_len, device=input_ids.device).expand(batch_size, seq_len) < lengths.unsqueeze(1)
+
         # Do NOT transpose for TorchCRF
-        
         return self.crf.viterbi_decode(emissions, mask=mask)
-
-        # Create mask
-        mask = torch.zeros_like(input_ids, dtype=torch.bool).to(input_ids.device)
-        for i, length in enumerate(lengths):
-            mask[i, :length] = True
-
-        # Decode returns list of lists: predicted tags (IDs) for each batch item
-        predictions = self.crf.decode(emissions, mask=mask)
-        return predictions
 
 # class BiLSTM_CRF(Model, nn.Module):
 #     def __init__(self, vocab_size, num_tags, embedding_dim=128, hidden_dim=256, dropout=0.3):
