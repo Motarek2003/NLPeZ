@@ -27,15 +27,15 @@ from utils import collate_fn
 # ------------------------------------------------------------------
 BATCH_SIZE = 64  # OPTIMIZED: Doubled batch size for faster training
 MAX_SEQ_LENGTH = 300  # OPTIMIZED: Reduced from 300 to 200 (shorter sequences = faster)
-CHAR_EMB_DIM = 128  # OPTIMIZED: Reduced from 256 to 128
+CHAR_EMB_DIM = 256  # OPTIMIZED: Reduced from 256 to 128
 LSTM_HIDDEN_DIM = 512  # OPTIMIZED: Reduced from 512 to 256 (still good quality)
 FASTTEXT_DIM = 300 # Standard high-quality dimension
 POS_EMB_DIM = 64  # OPTIMIZED: Reduced from 64 to 32
 LEARNING_RATE = 2e-3  # OPTIMIZED: Increased for faster convergence
 NUM_EPOCHS = 5  # OPTIMIZED: Reduced from 10 to 5 (with better LR)
-PATIENCE = 5  # OPTIMIZED: Reduced patience threshold
+PATIENCE = 7  # OPTIMIZED: Reduced patience threshold
 BATCH_PRINT_FREQ = 100
-NUM_LAYERS = 1  # OPTIMIZED: Reduced from 2 to 1 layer
+NUM_LAYERS = 2  # OPTIMIZED: Reduced from 2 to 1 layer
 DROPOUT = 0.3  # OPTIMIZED: Reduced from 0.5 to 0.3
 TARGET_ACCURACY = 0.995 # Target accuracy (1 - DER)
 GRADIENT_CLIP_VAL = 1.0 # Prevent exploding gradients with high LR
@@ -368,7 +368,34 @@ def evaluate_model(model, dataloader, device):
                 all_preds.extend(predictions[i])
                 all_labels.extend(labels[i, :length].tolist())
 
-    return sum(p != t for p, t in zip(all_preds, all_labels)) / len(all_labels)
+    # Calculate overall DER
+    total_errors = sum(p != t for p, t in zip(all_preds, all_labels))
+    overall_der = total_errors / len(all_labels)
+    
+    # Calculate DER only on diacritized characters (excluding <NT> label)
+    # Assuming label 0 or the last label is <NT> - need to check
+    # For now, let's also compute error on positions that HAVE diacritics in ground truth
+    diacritized_errors = 0
+    diacritized_count = 0
+    nt_label_id = None
+    
+    # Find the <NT> label id (typically the last one or a specific one)
+    # We'll use label statistics to identify the most common one (likely <NT>)
+    from collections import Counter
+    label_counts = Counter(all_labels)
+    most_common_label = label_counts.most_common(1)[0][0]
+    
+    for p, t in zip(all_preds, all_labels):
+        if t != most_common_label:  # Only count non-NT (diacritized) positions
+            diacritized_count += 1
+            if p != t:
+                diacritized_errors += 1
+    
+    diac_der = diacritized_errors / max(diacritized_count, 1)
+    
+    print(f"  [Eval] Overall DER: {overall_der:.4f} | Diacritized-only DER: {diac_der:.4f} ({diacritized_count}/{len(all_labels)} chars have diacritics)")
+    
+    return overall_der
 
 
 # ------------------------------------------------------------------
