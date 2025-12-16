@@ -150,18 +150,19 @@ def diacritize_chunk(text_chunk: str, model, vocab, fasttext_aligner, device, pr
     pos_ids = pos_ids[:max_seq_length]
     pos_ids = pos_ids + [0] * (max_seq_length - len(pos_ids))
     
-    # Convert to tensors
+    # Convert to tensors - lengths stays on CPU for pack_padded_sequence
     input_ids = torch.tensor([padded_ids], dtype=torch.long, device=device)
-    lengths = torch.tensor([length], dtype=torch.long)
+    lengths = torch.tensor([length], dtype=torch.long)  # CPU for packing
+    lengths_device = torch.tensor([length], dtype=torch.long, device=device)  # GPU for masking
     pos_ids_tensor = torch.tensor([pos_ids], dtype=torch.long, device=device)
     
     # Get FastText embeddings
     fasttext_vectors = fasttext_aligner.align_features(input_ids.cpu(), lengths)
     fasttext_vectors = fasttext_vectors.to(device)
     
-    # Run inference
+    # Run inference - pass GPU lengths for masking
     with torch.no_grad():
-        predictions = model.forward(input_ids, lengths, fasttext_vectors, pos_ids_tensor)
+        predictions = model.forward(input_ids, lengths_device, fasttext_vectors, pos_ids_tensor)
     
     # Reconstruct diacritized text
     pred_labels = predictions[0][:length]
