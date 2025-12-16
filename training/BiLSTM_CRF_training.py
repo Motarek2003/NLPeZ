@@ -37,7 +37,7 @@ PATIENCE = 10  # Allow more exploration before early stopping
 BATCH_PRINT_FREQ = 50  # More frequent logging
 NUM_LAYERS = 3  # Deeper model for complex patterns
 DROPOUT = 0.4  # Moderate regularization
-TARGET_ACCURACY = 0.98  # Target accuracy (1 - DER)
+TARGET_ACCURACY = 0.998  # Target accuracy (1 - DER)
 GRADIENT_CLIP_VAL = 1.0  # Prevent exploding gradients
 WEIGHT_DECAY = 1e-4  # Stronger regularization for AdamW
 SEED = 42  # For reproducibility
@@ -306,23 +306,32 @@ def train_diacritization_model(train_file, dev_file, fasttext_model_path, fastte
             patience_counter = 0
             logger.info(">>> New best model — saving checkpoint")
 
-            save_path = os.path.join(output_dir, "best_diacritization_model.pth")
-
-            torch.save(
-                {
-                    "model_state_dict": model.state_dict(),
-                    "char_to_id": train_dataset.char_to_id,
-                    "id_to_label": processor.id_to_label,
-                    "fasttext_model_path": fasttext_model_path,
-                    "char_emb_dim": CHAR_EMB_DIM,
-                    "lstm_hidden_dim": LSTM_HIDDEN_DIM,
-                    "fasttext_dim": FASTTEXT_DIM,
-                    "pos_emb_dim": POS_EMB_DIM,
-                    "num_layers": NUM_LAYERS,
-                    "dropout": DROPOUT
-                },
-                save_path,
-            )
+            # Save as pickle file
+            import pickle
+            save_path = os.path.join(output_dir, "best_diacritization_model.pkl")
+            
+            checkpoint_data = {
+                "model_state_dict": {k: v.cpu() for k, v in model.state_dict().items()},
+                "char_to_id": train_dataset.char_to_id,
+                "id_to_char": train_dataset.id_to_char,
+                "id_to_label": processor.id_to_label,
+                "label_to_id": processor.label_to_id,
+                "pos_to_id": train_dataset.pos_to_id,
+                "id_to_pos": train_dataset.id_to_pos,
+                "fasttext_model_path": fasttext_model_path,
+                "char_emb_dim": CHAR_EMB_DIM,
+                "lstm_hidden_dim": LSTM_HIDDEN_DIM,
+                "fasttext_dim": FASTTEXT_DIM,
+                "pos_emb_dim": POS_EMB_DIM,
+                "num_layers": NUM_LAYERS,
+                "dropout": DROPOUT,
+                "max_seq_length": MAX_SEQ_LENGTH
+            }
+            
+            with open(save_path, 'wb') as f:
+                pickle.dump(checkpoint_data, f)
+            
+            print(f"Model saved to: {save_path}")
 
             # Log milestone
             if current_accuracy >= TARGET_ACCURACY:
@@ -340,14 +349,14 @@ def train_diacritization_model(train_file, dev_file, fasttext_model_path, fastte
     print("TRAINING COMPLETED")
     print(f"Best Dev DER: {best_dev_der:.4f}")
     print(f"Best Dev Accuracy: {1 - best_dev_der:.4f}")
-    print(f"Model saved to: {os.path.join(output_dir, 'best_diacritization_model.pth')}")
+    print(f"Model saved to: {os.path.join(output_dir, 'best_diacritization_model.pkl')}")
     print("=" * 70)
     
     logger.info("=" * 70)
     logger.info("TRAINING COMPLETED")
     logger.info(f"Best Dev DER: {best_dev_der:.4f}")
     logger.info(f"Best Dev Accuracy: {1 - best_dev_der:.4f}")
-    logger.info(f"Model saved to: {os.path.join(output_dir, 'best_diacritization_model.pth')}")
+    logger.info(f"Model saved to: {os.path.join(output_dir, 'best_diacritization_model.pkl')}")
     logger.info("=" * 70)
 
 
