@@ -25,10 +25,10 @@ from utils import collate_fn
 # ------------------------------------------------------------------
 # CONFIGURATION
 # ------------------------------------------------------------------
-BATCH_SIZE = 128  # OPTIMIZED: Doubled batch size for faster training
-MAX_SEQ_LENGTH = 200  # OPTIMIZED: Reduced from 300 to 200 (shorter sequences = faster)
+BATCH_SIZE = 64  # OPTIMIZED: Doubled batch size for faster training
+MAX_SEQ_LENGTH = 300  # OPTIMIZED: Reduced from 300 to 200 (shorter sequences = faster)
 CHAR_EMB_DIM = 128  # OPTIMIZED: Reduced from 256 to 128
-LSTM_HIDDEN_DIM = 256  # OPTIMIZED: Reduced from 512 to 256 (still good quality)
+LSTM_HIDDEN_DIM = 512  # OPTIMIZED: Reduced from 512 to 256 (still good quality)
 FASTTEXT_DIM = 300 # Standard high-quality dimension
 POS_EMB_DIM = 64  # OPTIMIZED: Reduced from 64 to 32
 LEARNING_RATE = 2e-3  # OPTIMIZED: Increased for faster convergence
