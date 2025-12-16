@@ -88,6 +88,6 @@ class FastTextEmbeddings(Feature):
 #    (This file should contain one word or sentence per line).
 # 2. Instantiate and train (guarded):
 if __name__ == '__main__':
-    ARABIC_CORPUS_PATH = 'data/cleaned_undiacritized/cleaned_train_data.txt'
+    ARABIC_CORPUS_PATH = 'data/undiacritized/traincu_data.txt'
     fasttext_feature = FastTextEmbeddings(corpus_path=ARABIC_CORPUS_PATH)
     trained_model = fasttext_feature.train()

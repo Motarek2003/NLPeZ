@@ -6,4 +6,8 @@ pytorch-crf
 torchcrf
 tqdm
 
+huggingface_hub
+huggingface_hub[cli]
+
 fastapi[standard]
+uvicorn
