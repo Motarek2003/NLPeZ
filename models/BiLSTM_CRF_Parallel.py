@@ -1,97 +1,142 @@
 from interfaces.model import Model
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from TorchCRF import CRF
 from typing import List
 
 # Assuming the necessary imports and global constants (like START_TAG, STOP_TAG) are available.
+
+class SelfAttention(nn.Module):
+    """Self-attention layer for capturing long-range dependencies."""
+    def __init__(self, hidden_dim, num_heads=4, dropout=0.1):
+        super().__init__()
+        self.attention = nn.MultiheadAttention(hidden_dim, num_heads, dropout=dropout, batch_first=True)
+        self.layer_norm = nn.LayerNorm(hidden_dim)
+        self.dropout = nn.Dropout(dropout)
+        
+    def forward(self, x, mask=None):
+        # Self-attention with residual connection
+        attn_out, _ = self.attention(x, x, x, key_padding_mask=mask)
+        return self.layer_norm(x + self.dropout(attn_out))
+
 
 class Arabic_BiLSTM_CRF(Model, nn.Module):
     def __init__(self,
                  char_vocab_size: int,
                  num_tags: int,
                  pos_vocab_size: int,
-                 char_embedding_dim: int = 128,
-                 lstm_hidden_dim: int = 256,
-                 fasttext_embedding_dim: int = 100, # FastText dimension
-                 pos_embedding_dim: int = 32, # POS dimension
-                 num_layers: int = 2,
-                 dropout: float = 0.5):
+                 char_embedding_dim: int = 256,
+                 lstm_hidden_dim: int = 512,
+                 fasttext_embedding_dim: int = 300,  # FastText dimension
+                 pos_embedding_dim: int = 128,  # POS dimension
+                 num_layers: int = 3,
+                 dropout: float = 0.4,
+                 use_attention: bool = True):  # NEW: Attention flag
 
         nn.Module.__init__(self)
         Model.__init__(self)
 
+        self.use_attention = use_attention
+        
         # Calculate the total input dimension for the LSTM after feature concatenation
-        self.lstm_input_dim = char_embedding_dim + fasttext_embedding_dim + pos_embedding_dim #char dim + word dim + pos dim
+        self.lstm_input_dim = char_embedding_dim + fasttext_embedding_dim + pos_embedding_dim
 
         # 1. Character Embedding Layer (Trainable)
-        self.char_embedding = nn.Embedding(char_vocab_size, char_embedding_dim, padding_idx=0) # Creates a lookup table for all character IDs.
+        self.char_embedding = nn.Embedding(char_vocab_size, char_embedding_dim, padding_idx=0)
         
         # 2. POS Embedding Layer (Trainable)
         self.pos_embedding = nn.Embedding(pos_vocab_size, pos_embedding_dim, padding_idx=0)
 
-        self.dropout = nn.Dropout(dropout) # Used for regularization, applied to the character embeddings before the LSTM
+        self.input_dropout = nn.Dropout(dropout)
+        
+        # 3. Input projection layer (optional, for better feature mixing)
+        self.input_proj = nn.Linear(self.lstm_input_dim, self.lstm_input_dim)
 
-        # 3. BiLSTM Layer (The Encoder)
+        # 4. BiLSTM Layer (The Encoder)
         lstm_dropout = dropout if num_layers > 1 else 0
         self.lstm = nn.LSTM(self.lstm_input_dim,
                             lstm_hidden_dim // 2,
                             num_layers=num_layers,
                             bidirectional=True,
                             batch_first=True,
-                            dropout=lstm_dropout) # Dropout applies if num_layers > 1
+                            dropout=lstm_dropout)
 
-        # 3.5 Layer Normalization (Stability)
+        # 5. Layer Normalization (Stability)
         self.layer_norm = nn.LayerNorm(lstm_hidden_dim)
+        
+        # 6. Self-Attention Layer (NEW - for long-range dependencies)
+        if use_attention:
+            self.self_attention = SelfAttention(lstm_hidden_dim, num_heads=8, dropout=dropout)
+        
+        # 7. Output projection with residual
+        self.output_proj = nn.Sequential(
+            nn.Linear(lstm_hidden_dim, lstm_hidden_dim),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(lstm_hidden_dim, lstm_hidden_dim)
+        )
+        self.output_norm = nn.LayerNorm(lstm_hidden_dim)
 
-        # 3. Emission Score Projection Layer
+        # 8. Emission Score Projection Layer
         self.hidden2tag = nn.Linear(lstm_hidden_dim, num_tags)
 
-        # 4. CRF Layer (Batched and Efficient)
-        # Adapted for TorchCRF (s14t284) which does not support batch_first=True in __init__
+        # 9. CRF Layer (Batched and Efficient)
         self.crf = CRF(num_tags)
 
     def _get_lstm_features(self, input_ids: torch.Tensor, lengths: torch.Tensor, fasttext_vectors: torch.Tensor, pos_ids: torch.Tensor)-> torch.Tensor:
         """
-        Generates emission scores (BiLSTM output) for the batch.
+        Generates emission scores (BiLSTM + Attention output) for the batch.
         """
+        batch_size, seq_len = input_ids.shape
+        
         # 1. Character Embedding (C_emb)
-        char_embedded = self.char_embedding(input_ids) # (B, L, C_emb_dim)
+        char_embedded = self.char_embedding(input_ids)  # (B, L, C_emb_dim)
         
         # 2. POS Embedding
-        pos_embedded = self.pos_embedding(pos_ids) # (B, L, Pos_emb_dim)
+        pos_embedded = self.pos_embedding(pos_ids)  # (B, L, Pos_emb_dim)
 
         # Apply dropout
-        char_embedded = self.dropout(char_embedded)
-        pos_embedded = self.dropout(pos_embedded)
+        char_embedded = self.input_dropout(char_embedded)
+        pos_embedded = self.input_dropout(pos_embedded)
 
         # 3. Feature Concatenation (C_emb + W + POS)
-        lstm_input = torch.cat([char_embedded, fasttext_vectors, pos_embedded], dim=-1) # (B, L, LSTM_input_dim)
+        lstm_input = torch.cat([char_embedded, fasttext_vectors, pos_embedded], dim=-1)
+        
+        # 4. Input projection
+        lstm_input = self.input_proj(lstm_input)
+        
         max_len = lstm_input.size(1)
-        lengths = torch.clamp(lengths, max=max_len)
+        lengths_clamped = torch.clamp(lengths, max=max_len)
 
-        # 4. Packing (Required for performance with variable lengths)
-        # .cpu().tolist() is necessary here
+        # 5. Packing for efficient LSTM
         packed_input = nn.utils.rnn.pack_padded_sequence(
             lstm_input,
-            lengths.cpu().tolist(),
+            lengths_clamped.cpu().tolist(),
             batch_first=True,
             enforce_sorted=False
-        )# It converts the padded batch into a single, contiguous tensor, ignoring the padding tokens.
+        )
 
-        # 4. BiLSTM Pass
-        packed_output, _ = self.lstm(packed_input) # Runs the packed sequence through the LSTM.
+        # 6. BiLSTM Pass
+        packed_output, _ = self.lstm(packed_input)
 
-        # 5. Unpacking
+        # 7. Unpacking
         lstm_out, _ = nn.utils.rnn.pad_packed_sequence(packed_output, batch_first=True)
-        # Converts the LSTM output back into a padded tensor format, ensuring the output aligns with the original batch shape $(B, L, H_{dim})$
 
-        # Apply LayerNorm
+        # 8. Layer Normalization
         lstm_out = self.layer_norm(lstm_out)
+        
+        # 9. Self-Attention (if enabled)
+        if self.use_attention:
+            # Create attention mask (True = ignore, False = attend)
+            attn_mask = torch.arange(seq_len, device=input_ids.device).expand(batch_size, seq_len) >= lengths.unsqueeze(1)
+            lstm_out = self.self_attention(lstm_out, mask=attn_mask)
+        
+        # 10. Output projection with residual
+        lstm_out = self.output_norm(lstm_out + self.output_proj(lstm_out))
 
-        # 6. Emission Score Projection
-        emissions = self.hidden2tag(lstm_out) # (B, L, Num_tags)
-        # Projects the BiLSTM output to the final tag space. Output shape: $(B, L, \text{Num\_tags})$. These are the final scores fed to the CRF layer.
+        # 11. Emission Score Projection
+        emissions = self.hidden2tag(lstm_out)
         return emissions
 
     # --- Loss Calculation (using batched CRF) ---

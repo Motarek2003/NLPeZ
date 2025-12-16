@@ -23,24 +23,24 @@ from Feature_Aligner.FastTextAligner import FastTextFeatureAligner
 from utils import collate_fn
 
 # ------------------------------------------------------------------
-# CONFIGURATION
+# CONFIGURATION (GPU-ENHANCED for Maximum Quality)
 # ------------------------------------------------------------------
-BATCH_SIZE = 64  # OPTIMIZED: Doubled batch size for faster training
-MAX_SEQ_LENGTH = 300  # OPTIMIZED: Reduced from 300 to 200 (shorter sequences = faster)
-CHAR_EMB_DIM = 256  # OPTIMIZED: Reduced from 256 to 128
-LSTM_HIDDEN_DIM = 512  # OPTIMIZED: Reduced from 512 to 256 (still good quality)
-FASTTEXT_DIM = 300 # Standard high-quality dimension
-POS_EMB_DIM = 64  # OPTIMIZED: Reduced from 64 to 32
-LEARNING_RATE = 2e-3  # OPTIMIZED: Increased for faster convergence
-NUM_EPOCHS = 5  # OPTIMIZED: Reduced from 10 to 5 (with better LR)
-PATIENCE = 7  # OPTIMIZED: Reduced patience threshold
-BATCH_PRINT_FREQ = 100
-NUM_LAYERS = 2  # OPTIMIZED: Reduced from 2 to 1 layer
-DROPOUT = 0.3  # OPTIMIZED: Reduced from 0.5 to 0.3
-TARGET_ACCURACY = 0.995 # Target accuracy (1 - DER)
-GRADIENT_CLIP_VAL = 1.0 # Prevent exploding gradients with high LR
-WEIGHT_DECAY = 1e-5 # Regularization for AdamW
-SEED = 42 # For reproducibility
+BATCH_SIZE = 64  # Smaller batch = more gradient updates = better generalization
+MAX_SEQ_LENGTH = 400  # Longer context for better understanding
+CHAR_EMB_DIM = 256  # Rich character representations
+LSTM_HIDDEN_DIM = 512  # Large hidden state for complex patterns
+FASTTEXT_DIM = 300  # Standard high-quality dimension
+POS_EMB_DIM = 128  # Rich POS embeddings for grammatical context
+LEARNING_RATE = 1e-3  # Lower LR for stable, quality training
+NUM_EPOCHS = 10  # More epochs to fully converge
+PATIENCE = 10  # Allow more exploration before early stopping
+BATCH_PRINT_FREQ = 50  # More frequent logging
+NUM_LAYERS = 3  # Deeper model for complex patterns
+DROPOUT = 0.4  # Moderate regularization
+TARGET_ACCURACY = 0.98  # Target accuracy (1 - DER)
+GRADIENT_CLIP_VAL = 1.0  # Prevent exploding gradients
+WEIGHT_DECAY = 1e-4  # Stronger regularization for AdamW
+SEED = 42  # For reproducibility
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -197,12 +197,20 @@ def train_diacritization_model(train_file, dev_file, fasttext_model_path, fastte
         fasttext_embedding_dim=FASTTEXT_DIM,
         pos_embedding_dim=POS_EMB_DIM,
         num_layers=NUM_LAYERS,
-        dropout=DROPOUT
+        dropout=DROPOUT,
+        use_attention=True  # Enable self-attention for better long-range context
     ).to(device)
+    
+    # Print model size
+    total_params = sum(p.numel() for p in model.parameters())
+    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print(f"Model Parameters: {total_params:,} total, {trainable_params:,} trainable")
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, mode='min', factor=0.5, patience=3
+    
+    # Cosine annealing for better convergence
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
+        optimizer, T_0=5, T_mult=2, eta_min=1e-6
     )
     scaler = torch.amp.GradScaler(device.type, enabled=device.type == "cuda")
 
@@ -273,17 +281,19 @@ def train_diacritization_model(train_file, dev_file, fasttext_model_path, fastte
         # -----------------------------
         dev_der = evaluate_model(model, dev_loader, device)
         
-        # Update scheduler
-        scheduler.step(dev_der)
+        # Update scheduler (Cosine Annealing doesn't need metrics)
+        scheduler.step(epoch)
 
         epoch_time = time.time() - start_time
         current_accuracy = 1.0 - dev_der
+        current_lr = optimizer.param_groups[0]['lr']
         epoch_msg = (
             f"Epoch {epoch+1} | "
             f"Time {epoch_time:.1f}s | "
             f"Train Loss {avg_train_loss:.4f} | "
             f"Dev DER {dev_der:.4f} | "
-            f"Dev Accuracy {current_accuracy:.4f}"
+            f"Dev Accuracy {current_accuracy:.4f} | "
+            f"LR {current_lr:.2e}"
         )
         print(epoch_msg)
         logger.info(epoch_msg)
