@@ -121,7 +121,7 @@ class Arabic_BiLSTM_CRF(Model, nn.Module):
         packed_output, _ = self.lstm(packed_input)
 
         # 7. Unpacking
-        lstm_out, _ = nn.utils.rnn.pad_packed_sequence(packed_output, batch_first=True)
+        lstm_out, _ = nn.utils.rnn.pad_packed_sequence(packed_output, batch_first=True, total_length=seq_len)
 
         # 8. Layer Normalization
         lstm_out = self.layer_norm(lstm_out)
@@ -129,7 +129,10 @@ class Arabic_BiLSTM_CRF(Model, nn.Module):
         # 9. Self-Attention (if enabled)
         if self.use_attention:
             # Create attention mask (True = ignore, False = attend)
-            attn_mask = torch.arange(seq_len, device=input_ids.device).expand(batch_size, seq_len) >= lengths.unsqueeze(1)
+            # Use actual lstm_out seq length for mask
+            actual_seq_len = lstm_out.size(1)
+            lengths_device = lengths.to(input_ids.device)
+            attn_mask = torch.arange(actual_seq_len, device=input_ids.device).expand(batch_size, actual_seq_len) >= lengths_device.unsqueeze(1)
             lstm_out = self.self_attention(lstm_out, mask=attn_mask)
         
         # 10. Output projection with residual
