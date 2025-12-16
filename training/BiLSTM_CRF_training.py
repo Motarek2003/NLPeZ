@@ -278,13 +278,15 @@ def train_diacritization_model(train_file, dev_file, fasttext_model_path, fastte
 
         epoch_time = time.time() - start_time
         current_accuracy = 1.0 - dev_der
-        logger.info(
+        epoch_msg = (
             f"Epoch {epoch+1} | "
             f"Time {epoch_time:.1f}s | "
             f"Train Loss {avg_train_loss:.4f} | "
             f"Dev DER {dev_der:.4f} | "
             f"Dev Accuracy {current_accuracy:.4f}"
         )
+        print(epoch_msg)
+        logger.info(epoch_msg)
 
         # -----------------------------
         # CHECKPOINT BEST MODEL
@@ -324,6 +326,13 @@ def train_diacritization_model(train_file, dev_file, fasttext_model_path, fastte
                 break
     
     # FINAL SUMMARY
+    print("=" * 70)
+    print("TRAINING COMPLETED")
+    print(f"Best Dev DER: {best_dev_der:.4f}")
+    print(f"Best Dev Accuracy: {1 - best_dev_der:.4f}")
+    print(f"Model saved to: {os.path.join(output_dir, 'best_diacritization_model.pth')}")
+    print("=" * 70)
+    
     logger.info("=" * 70)
     logger.info("TRAINING COMPLETED")
     logger.info(f"Best Dev DER: {best_dev_der:.4f}")
