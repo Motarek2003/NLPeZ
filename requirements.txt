@@ -3,7 +3,6 @@ pandas
 scikit-learn
 torch
 pytorch-crf
-torchcrf
 tqdm
 
 huggingface_hub
