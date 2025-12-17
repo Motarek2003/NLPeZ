@@ -25,7 +25,7 @@ from utils import collate_fn
 # ------------------------------------------------------------------
 # CONFIGURATION (GPU-ENHANCED for Maximum Quality)
 # ------------------------------------------------------------------
-BATCH_SIZE = 64  # Smaller batch = more gradient updates = better generalization
+BATCH_SIZE = 32  # Smaller batch = more gradient updates = better generalization
 MAX_SEQ_LENGTH = 400  # Longer context for better understanding
 CHAR_EMB_DIM = 256  # Rich character representations
 LSTM_HIDDEN_DIM = 512  # Large hidden state for complex patterns
