@@ -35,7 +35,18 @@ class FastTextEmbeddings(Feature):
         """
         if os.path.exists(self.output_path):
             print(f"Loading existing FastText model from {self.output_path}")
-            return self.load_model()
+            try:
+                return self.load_model()
+            except Exception as e:
+                # Common failure: numpy/gensim pickle incompatibility across environments
+                print(f"Warning: failed to load existing FastText model: {e}")
+                print("Attempting to retrain FastText model in current environment...")
+                try:
+                    # remove corrupt/ incompatible model file and retrain
+                    os.remove(self.output_path)
+                except Exception:
+                    pass
+                return self.train()
         else:
             print(f"No FastText model found. Training new model...")
             return self.train()
