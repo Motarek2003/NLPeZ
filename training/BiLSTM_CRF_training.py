@@ -25,7 +25,7 @@ from utils import collate_fn
 # ------------------------------------------------------------------
 # CONFIGURATION (GPU-ENHANCED for Maximum Quality)
 # ------------------------------------------------------------------
-BATCH_SIZE = 64  # Smaller batch = more gradient updates = better generalization
+BATCH_SIZE = 32  # Smaller batch = more gradient updates = better generalization
 MAX_SEQ_LENGTH = 400  # Longer context for better understanding
 CHAR_EMB_DIM = 256  # Rich character representations
 LSTM_HIDDEN_DIM = 512  # Large hidden state for complex patterns
@@ -200,6 +200,44 @@ def train_diacritization_model(train_file, dev_file, fasttext_model_path, fastte
         dropout=DROPOUT,
         use_attention=True  # Enable self-attention for better long-range context
     ).to(device)
+    
+    # -----------------------------
+    # Resume from checkpoint if available — prefer `inference/model.pkl`
+    # -----------------------------
+    inference_ckpt = os.path.join(PROJECT_ROOT, "inference", "model.pkl")
+    output_ckpt = os.path.join(output_dir, "model.pkl")
+    # pick inference checkpoint if present, otherwise output checkpoint
+    checkpoint_path = inference_ckpt if os.path.exists(inference_ckpt) else output_ckpt
+    if os.path.exists(checkpoint_path):
+        try:
+            import pickle as _pickle
+            logger.info(f"Found checkpoint at {checkpoint_path} — loading weights (will resume training)")
+            with open(checkpoint_path, 'rb') as _f:
+                _ckpt = _pickle.load(_f)
+
+            # Load model weights (handle CPU/GPU devices)
+            model.load_state_dict(_ckpt.get('model_state_dict', _ckpt.get('state_dict')))
+
+            # Check vocab compatibility and warn if mismatch
+            ckpt_char_to_id = _ckpt.get('char_to_id')
+            if ckpt_char_to_id and ckpt_char_to_id != train_dataset.char_to_id:
+                logger.warning("Checkpoint char_to_id differs from current dataset vocabulary — this may cause wrong predictions")
+
+            ckpt_pos_to_id = _ckpt.get('pos_to_id')
+            if ckpt_pos_to_id and ckpt_pos_to_id != train_dataset.pos_to_id:
+                logger.warning("Checkpoint pos_to_id differs from current dataset POS vocabulary")
+
+            # Evaluate current checkpoint on dev to set baseline
+            try:
+                model.eval()
+                baseline_dev_der = evaluate_model(model, dev_loader, device)
+                best_dev_der = min(best_dev_der, baseline_dev_der)
+                logger.info(f"Baseline Dev DER from checkpoint: {baseline_dev_der:.4f}")
+            except Exception as e:
+                logger.warning(f"Could not evaluate checkpoint before training: {e}")
+
+        except Exception as e:
+            logger.warning(f"Failed to load checkpoint {checkpoint_path}: {e}")
     
     # Print model size
     total_params = sum(p.numel() for p in model.parameters())
